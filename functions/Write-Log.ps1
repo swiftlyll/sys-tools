@@ -23,28 +23,39 @@
 function Write-Log {
     [CmdletBinding(DefaultParameterSetName = "Log")]
     param (
-        [Parameter(Mandatory = $true, ParameterSetName = "Log")]
+        [Parameter(Position = 0, Mandatory = $true, ParameterSetName = "Log")]
         [ValidateNotNullOrEmpty()]
         [String]
         $LogMessage,
-        [Parameter(Mandatory = $false, ParameterSetName = "Log")]
+        [Parameter(Position = 1, Mandatory = $false, ParameterSetName = "Log")]
         [ValidatePattern("^[a-zA-Z]:")] # ensure valid path by checking drive letter is included
         [String]
         $LogFileDirectory
     )
     begin {
-        $defaultLogFileDirectory = "C:\ps-logs\$((Split-Path -Leaf ${Global:MyInvocation}.MyCommand.Definition).Replace('.ps1',''))"
+        $scriptName = (Split-Path -Leaf ${Global:MyInvocation}.MyCommand.Definition).Replace('.ps1','') # uses name of the script calling this function
+        $defaultLogFileDirectory = "C:\ps-logs\$scriptName"
     }
     process {
-        # if $LogFileDirectory is unspecified (null/empty str), use the default log path
-        if (-not $LogFileDirectory) {
-            $LogFileDirectory = $defaultLogFileDirectory
+        # cleanup for log directory path
+        if ($LogFileDirectory) {
+            $LogFileDirectory = $LogFileDirectory.Trim() # clean leading/trailing whitespace
+            $isUserProvidedPath = $true
+        } else {
+            $LogFileDirectory = $defaultLogFileDirectory # fallback to default path
         }
-        else {
-            $LogFileDirectory = $LogFileDirectory.Replace(" ", "") # validate log path is not empty spaces, ex. "   " or " " resolve to ""
-        }
-        # check that $LogFileDirectory has a valid path. if checks fail disable log storage.
+        # verify log directory is a valid path. if checks fail disable log storage.
         if (-not (Test-Path -LiteralPath $LogFileDirectory -PathType Container)) {
+            try {
+                # attempt to create directory
+                New-Item -Path $LogFileDirectory -ItemType Directory -ErrorAction Stop | Out-Null
+            }
+            catch {
+                <#Do this if a terminating exception happens#>
+            }
+            
+            
+            
             write-output "test-path failed"
             # if default path is being used and is invalid, try creating
             if ($LogFileDirectory -eq $defaultLogFileDirectory) {
@@ -94,15 +105,7 @@ function Write-Log {
         else {
             "path $LogFileDirectory exists"
         }
-        # log composition
-        echo $LogMessage
-        if ($DisableLogStorage) {
-            "this message is not getting stored"
-        }                
-        else {
-            "logs enabled"
-        }
     }
 }
 
-Write-Log -LogMessage "[TEST]"
+Write-Log "Test"
