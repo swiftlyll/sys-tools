@@ -36,10 +36,10 @@ function Write-Log {
         [String]
         $LogDirectory,
         [Parameter(Position=2, ParameterSetName = "Log")]
-        [switch] 
+        [Switch] 
         $ErrorLog = $false,
         [Parameter(Position = 0,Mandatory = $true, ParameterSetName = "Info")]
-        [switch] 
+        [Switch] 
         $DisplayLogLocation = $false
     )
     begin {
