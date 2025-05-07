@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Alternative to Write-Output that includes date and time.
+    Creates a log message.
 
 .DESCRIPTION
-    Function will create a log message with time and date that will then get stored in either the default
-    log folder location, or a user specified location.
+    Function will output a log message with date/time that will then get stored in either the default
+    location, or a user specified location.
 
 .EXAMPLE
     # default use, can be used without specifying $LogMessage
@@ -12,7 +12,11 @@
 
 .EXAMPLE
     # specify alternative log folder
-    Write-Log -LogMessage "Action B completed successfully" -$LogFileDirectory "C:\temp\my-logs"
+    Write-Log -LogMessage "Action B completed successfully" -LogDirectory "C:\temp\my-logs"
+
+.EXAMPLE
+    # check why logs are not getting stored with debug messages
+    Write-Log -LogMessage "Test" -LogDirectory "C:\temp" -Debug
 
 .NOTES
     Auther: Kennet Morales
@@ -30,82 +34,91 @@ function Write-Log {
         [Parameter(Position = 1, Mandatory = $false, ParameterSetName = "Log")]
         [ValidatePattern("^[a-zA-Z]:")] # ensure valid path by checking drive letter is included
         [String]
-        $LogFileDirectory
+        $LogDirectory,
+        [Parameter(Position=2, ParameterSetName = "Log")]
+        [switch] 
+        $ErrorLog = $false,
+        [Parameter(Position = 0,Mandatory = $true, ParameterSetName = "Info")]
+        [switch] 
+        $DisplayLogLocation = $false
     )
     begin {
         $scriptName = (Split-Path -Leaf ${Global:MyInvocation}.MyCommand.Definition).Replace('.ps1','') # uses name of the script calling this function
-        $defaultLogFileDirectory = "C:\ps-logs\$scriptName"
+        $defaultLogDirectory = "C:\ps-logs\$scriptName"
     }
     process {
-        # cleanup for log directory path
-        if ($LogFileDirectory) {
-            $LogFileDirectory = $LogFileDirectory.Trim() # clean leading/trailing whitespace
-            $isUserProvidedPath = $true
-        } else {
-            $LogFileDirectory = $defaultLogFileDirectory # fallback to default path
-        }
-        # verify log directory is a valid path. if checks fail disable log storage.
-        if (-not (Test-Path -LiteralPath $LogFileDirectory -PathType Container)) {
-            try {
-                # attempt to create directory
-                New-Item -Path $LogFileDirectory -ItemType Directory -ErrorAction Stop | Out-Null
-            }
-            catch {
-                <#Do this if a terminating exception happens#>
-            }
-            
-            
-            
-            write-output "test-path failed"
-            # if default path is being used and is invalid, try creating
-            if ($LogFileDirectory -eq $defaultLogFileDirectory) {
-                try {
-                    "attempt to create default path $LogFileDirectory"
-                    New-Item -Path $LogFileDirectory -ItemType Directory -ErrorAction Stop | Out-Null
-                    "success creating def path"
-                }
-                catch {
-                    "failed to create def"
-                    "disable log storage"
-                    # disable storage due to default loc fail
-                    $DisableLogStorage = $true
-                }
-            }
-            # if user path is being used and is invalid, else try creating (implement default log storage location failover)
-            else {          
-                "attempt to create user path $LogFileDirectory"
-                try {
-                    New-Item -Path $LogFileDirectory -ItemType Directory -ErrorAction Stop | Out-Null
-                }
-                catch {
-                    # if failed to create user path, try default
-                    write-output "failed to create user path, checking default existance"
-                    # first check if it already exists to prevent overwritting
-                    if ((Test-Path -Path $defaultLogFileDirectory)) {
-                        write-output "found existing def and assigned"
-                        $LogFileDirectory = $defaultLogFileDirectory
-                    }
-                    # if not try creating default dir
-                    else {
-                        try {
-                            "creating def"
-                            $LogFileDirectory = $defaultLogFileDirectory
-                            New-Item -Path $LogFileDirectory -ItemType Directory -ErrorAction Stop | Out-Null
-                            "def created"
-                        }
-                        catch {
-                            # disable storage due to default loc fail
-                            write-output "default failover failed"
-                            $DisableLogStorage = $true
-                        }
-                    }
-                }
-            }    
+        # cleanup stored path in log dir var
+        if ($LogDirectory) {
+            $LogDirectory = $LogDirectory.Trim() # clean leading/trailing whitespace
+            $isUserProvidedPath = $true # used for checks to remove unnecessary loop in case of failover
+            Write-Debug "Using user provided path $LogDirectory for log storage"
         }
         else {
-            "path $LogFileDirectory exists"
+            $LogDirectory = $defaultLogDirectory # fallback to default path
+            Write-Debug "Using default path $LogDirectory for log storage"
+        }
+        # verify log directory is a valid path. if checks fail disable log storage.
+        if (-not (Test-Path -LiteralPath $LogDirectory -PathType Container)) {
+            Write-Debug "Path $LogDirectory does not exist"
+            try {
+                # attempt to create directory
+                Write-Debug "Attempting to create $LogDirectory"
+                New-Item -Path $LogDirectory -ItemType Directory -ErrorAction Stop | Out-Null
+                Write-Debug "Successfully created $LogDirectory"
+            }
+            catch {
+                # if path is user provided, failover to default and try again
+                Write-Debug "Failed to create $LogDirectory"
+                if ($isUserProvidedPath) {
+                    Write-Debug "Initiating failover to default path $defaultLogDirectory"
+                    $LogDirectory = $defaultLogDirectory
+                    if (-not (Test-Path -LiteralPath $LogDirectory -PathType Container)) {
+                        try {
+                            Write-Debug "Default path $LogDirectory does not exist"
+                            Write-Debug "Attempting to create $LogDirectory"
+                            New-Item -Path $LogDirectory -ItemType Directory -ErrorAction Stop | Out-Null
+                            Write-Debug "Successfully created $LogDirectory"
+                        }
+                        catch {
+                            Write-Debug "Failed to create $LogDirectory"
+                            $disableLogStorage = $true
+                            Write-Debug "Disabled log storage"
+                        }
+                    }
+                    else {
+                        Write-Debug "Confirmed path $LogDirectory exists"
+                        Write-Debug "Failover to default path $LogDirectory successful"
+                    }
+                }
+                # if path was already default but still failed then disabled log storage
+                else {
+                    $disableLogStorage = $true
+                    Write-Debug "Disabled log storage"
+                }
+            }
+        }
+        else {
+            Write-Debug "Confirmed path $LogDirectory exists"
+        }
+        # option to show log location
+        if ($DisplayLogLocation) {
+            Write-Verbose "Logs can be found inside $LogDirectory" -Verbose
+            return
+        }
+
+        # create log message fields
+        $logType = if ($ErrorLog) {"[ERROR]"} else {"[INFO]"}
+        $timestamp = "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss.ffff")]"
+
+        # get date to append to log file name
+        $date = Get-Date -Format 'yyyyMMdd'
+        
+        # craft log message
+        if ($disableLogStorage) {
+            Write-Output "$timestamp $logType $LogMessage"
+        }
+        else {
+            Write-Output "$timestamp $logType $LogMessage" | Tee-Object -FilePath "$LogDirectory\logs_$date.txt" -Append
         }
     }
 }
-
-Write-Log "Test"
