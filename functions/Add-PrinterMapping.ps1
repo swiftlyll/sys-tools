@@ -13,14 +13,14 @@
 function Add-PrinterMapping {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true)]
-        [String]
+        [Parameter(Mandatory)]
+        [string]
         $PrinterName,
-        [Parameter(Mandatory = $true)]
-        [String]
+        [Parameter(Mandatory)]
+        [string]
         $DriverName,
-        [Parameter(Mandatory = $true)]
-        [String]
+        [Parameter(Mandatory)]
+        [string]
         $PrinterPort
     )
     process {
